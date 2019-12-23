@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 import rospy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint
 
 import math
 from std_msgs.msg import Int32
 from scipy.spatial import KDTree
-#import numpy as np
+import numpy as np
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
 
@@ -37,7 +37,8 @@ class WaypointUpdater(object):
         # TODO: Add a subscriber for /traffic_waypoint and /obstacle_waypoint below
         rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
         # rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
-
+        rospy.Subscriber('/current_velocity', TwistStamped, self.velocity_cb)
+        
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         # TODO: Add other member variables you need below
@@ -45,7 +46,9 @@ class WaypointUpdater(object):
         self.base_lane = None
         self.waypoints_2d = None
         self.waypoint_tree = None
-
+        self.stopline_wp_idx = -1
+        self.loop()
+        
         # rospy.spin()
     def loop(self):
         rate = rospy.Rate(50)
@@ -75,7 +78,7 @@ class WaypointUpdater(object):
             closest_idx = (closest_idx + 1) % len(self.waypoints_2d)
         return closest_idx
 
-    def publish_waypoints(self, closest_idx):
+    def publish_waypoints(self):
         # lane = Lane()
         # lane.header = self.base_waypoints.header
         # lane.waypoints = self.base_waypoints.waypoints[closest_idx:closest_idx + LOOKAHEAD_WPS]
@@ -93,9 +96,9 @@ class WaypointUpdater(object):
         base_waypoints = self.base_lane.waypoints[closest_idx:farthest_idx]
 
         # If no light detected, publish base_waypoints
-        print(self.stopline_wp_idx, farthest_idx)
+        # print(self.stopline_wp_idx, farthest_idx)
         if (self.stopline_wp_idx == -1) or (self.stopline_wp_idx >= farthest_idx):
-            # This means we didn't detect any traffic lights
+            # Didn't detect any traffic lights
             lane.waypoints = base_waypoints
         else:
             # Detected traffic light - RED - So decel
@@ -114,13 +117,15 @@ class WaypointUpdater(object):
 
             stop_idx = max(self.stopline_wp_idx - closest_idx - 2, 0) # 2 waypoints back from line so car stops at line
             dist = self.distance(waypoints, i, stop_idx)
-            vel = math.sqrt(2 * MAX_DECEL * dist)
+            vel = math.sqrt(2 * 0.5 * dist)
             if vel < 1.:
                 vel = 0.
             p.twist.twist.linear.x = min(vel, wp.twist.twist.linear.x)
             temp.append(p)
 
         return temp
+    def velocity_cb(self, msg):
+        self.current_vel = msg.twist.linear.x
 
     def pose_cb(self, msg):
         # TODO: Implement
